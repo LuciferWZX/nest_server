@@ -10,6 +10,7 @@ enum PlayerStatus {
 }
 interface Player {
   uid: string;
+  username:string
   status: PlayerStatus;
   isLeave: boolean; //是否离开
   score: 0;
@@ -19,7 +20,7 @@ interface Player {
 })
 export class MyWebsocketGateway {
   room = 'room1';
-  players: Map<string, Player>; //所有玩家
+  players: Map<string, Player>= new Map(); //所有玩家
   isStart = false; //是否开始
 
   round = 1; //回合数
@@ -45,6 +46,7 @@ export class MyWebsocketGateway {
   @SubscribeMessage('joinRoom')
   handleJoinRoom(client: Socket, payload) {
     const uid = payload.uid;
+    const { username } = client.handshake.auth;
     console.log(`${uid} 以加入：${payload.roomId}`);
     client.join(payload.roomId);
     //初始化player
@@ -56,18 +58,29 @@ export class MyWebsocketGateway {
       //中途加入或者一开始就加入
       this.players.set(uid, {
         uid,
+        username:username,
         status: PlayerStatus.unReady,
         score: 0,
         isLeave: false,
       });
     }
-    // client.emit('joinRoom', payload.roomId);
+    const newestPlayer = this.players.get(uid)
+
+    this.server.to(this.room).emit("joinRoom",{
+      player:newestPlayer,
+      players:[...this.players.values()]
+    })
   }
   @SubscribeMessage('prepare')
   handlePrepare(client: Socket) {
     const uid = client.handshake.auth['uid'];
     const player = this.players.get(uid);
     this.players.set(uid, { ...player, status: PlayerStatus.ready });
+    const newestPlayer = this.players.get(uid)
+    this.server.to(this.room).emit("prepare",{
+      player:newestPlayer,
+      players:[...this.players.values()]
+    })
     this.isStart = this.isAllReady();
     if (this.isStart) {
       this.server.emit('roundStart');
@@ -90,7 +103,11 @@ export class MyWebsocketGateway {
     client.leave(payload.roomId);
     const player = this.players.get(uid);
     this.players.set(uid, { ...player, isLeave: true });
-    client.emit('leaveRoom', payload.roomId);
+    const newestPlayer = this.players.get(uid)
+    this.server.to(this.room).emit("leaveRoom",{
+      player:newestPlayer,
+      players:[...this.players.values()]
+    })
   }
   // 接受网页发送的数据
   @SubscribeMessage('message')
